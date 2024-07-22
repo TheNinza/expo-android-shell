@@ -1,0 +1,10 @@
+{
+  "extends": "expo/tsconfig.base",
+  "compilerOptions": {
+    "strict": true,
+    "paths": {
+      "expo-android-shell": ["../src/index"],
+      "expo-android-shell/*": ["../src/*"]
+    }
+  }
+}
