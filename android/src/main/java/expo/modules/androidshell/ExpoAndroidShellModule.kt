@@ -1,47 +1,91 @@
 package expo.modules.androidshell
 
+import expo.modules.kotlin.Promise
+import expo.modules.kotlin.exception.CodedException
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
+import java.io.BufferedReader
+import java.io.IOException
+import java.io.InputStream
+import java.io.InputStreamReader
+
 
 class ExpoAndroidShellModule : Module() {
-  // Each module class must implement the definition function. The definition consists of components
-  // that describes the module's functionality and behavior.
-  // See https://docs.expo.dev/modules/module-api for more details about available components.
-  override fun definition() = ModuleDefinition {
-    // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
-    // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
-    // The module will be accessible from `requireNativeModule('ExpoAndroidShell')` in JavaScript.
-    Name("ExpoAndroidShell")
 
-    // Sets constant properties on the module. Can take a dictionary or a closure that returns a dictionary.
-    Constants(
-      "PI" to Math.PI
-    )
+    private fun readStream(stream: InputStream): String {
+        val reader = BufferedReader(InputStreamReader(stream))
+        val output = StringBuilder()
+        var line: String?
 
-    // Defines event names that the module can send to JavaScript.
-    Events("onChange")
+        try {
+            while (reader.readLine().also { line = it } != null) {
+                output.append(line)
+            }
+        } catch (e: IOException) {
+            e.printStackTrace()
+        } finally {
+            try {
+                stream.close()
+            } catch (e: IOException) {
+                e.printStackTrace()
+            }
+        }
 
-    // Defines a JavaScript synchronous function that runs the native code on the JavaScript thread.
-    Function("hello") {
-      "Hello world! 👋"
+        return output.toString()
     }
 
-    // Defines a JavaScript function that always returns a Promise and whose native code
-    // is by default dispatched on the different thread than the JavaScript runtime runs on.
-    AsyncFunction("setValueAsync") { value: String ->
-      // Send an event to JavaScript.
-      sendEvent("onChange", mapOf(
-        "value" to value
-      ))
+    private fun runCommand(command: String): String {
+        var process: Process? = null
+        var output = ""
+        var error = ""
+        try {
+            process = Runtime.getRuntime().exec(command)
+            output = readStream(process.inputStream)
+            error = readStream(process.errorStream)
+            process.waitFor()
+        } catch (e: IOException) {
+            e.printStackTrace()
+        } catch (e: InterruptedException) {
+            e.printStackTrace()
+        } finally {
+            process?.destroy()
+        }
+        return output + error
+
     }
 
-    // Enables the module to be used as a native view. Definition components that are accepted as part of
-    // the view definition: Prop, Events.
-    View(ExpoAndroidShellView::class) {
-      // Defines a setter for the `name` prop.
-      Prop("name") { view: ExpoAndroidShellView, prop: String ->
-        println(prop)
-      }
+    // Each module class must implement the definition function. The definition consists of components
+    // that describes the module's functionality and behavior.
+    // See https://docs.expo.dev/modules/module-api for more details about available components.
+    override fun definition() = ModuleDefinition {
+        // Sets the name of the module that JavaScript code will use to refer to the module. Takes a string as an argument.
+        // Can be inferred from module's class name, but it's recommended to set it explicitly for clarity.
+        // The module will be accessible from `requireNativeModule('ExpoAndroidShell')` in JavaScript.
+        Name("ExpoAndroidShell")
+
+
+        Function("execCommand") { command: String ->
+            val output = runCommand(command)
+            return@Function output
+        }
+
+        AsyncFunction("execCommandAsync") { command: String, promise: Promise ->
+            val thread = Thread {
+                val output = runCommand(command)
+                promise.resolve(output)
+            }
+
+            try {
+                thread.start()
+            } catch (e: Exception) {
+                promise.reject(
+                    CodedException(
+                        "ERR_EXEC_COMMAND",
+                        "Failed to execute command: $command",
+                        e
+                    )
+                )
+            }
+        }
     }
-  }
 }
